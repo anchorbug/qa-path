@@ -1,12 +1,10 @@
-"""Start app.py before running these tests."""
-import os
+"""A local app is started by conftest; QA_BASE_URL can override it."""
 import requests
 
-BASE_URL = os.environ.get('QA_BASE_URL', 'http://127.0.0.1:8765')
 
 
-def test_catalog_contract():
-    response = requests.get(f'{BASE_URL}/shop/api/products', timeout=5)
+def test_catalog_contract(shop_url):
+    response = requests.get(f'{shop_url}/shop/api/products', timeout=5)
     assert response.status_code == 200
     products = response.json()['products']
     assert len(products) == 2
@@ -15,7 +13,7 @@ def test_catalog_contract():
         assert product['price'] > 0
 
 
-def test_missing_resource():
-    response = requests.get(f'{BASE_URL}/shop/api/missing', timeout=5)
+def test_missing_resource(shop_url):
+    response = requests.get(f'{shop_url}/shop/api/missing', timeout=5)
     assert response.status_code == 404
 

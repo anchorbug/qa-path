@@ -52,6 +52,8 @@ def save(lesson, code, hints=0, result=None):
 def evaluate(lesson_id, code):
     """Run learner-owned local Python in a separate process; this is NOT a sandbox."""
     lesson = LESSON_MAP[lesson_id]
+    if lesson.get('kind') == 'lab':
+        raise ValueError('Эта работа выполняется в IDE и принимается по отчёту. Автопроверки нет.')
     with tempfile.TemporaryDirectory(prefix='qa-path-') as temp:
         folder = Path(temp)
         (folder / 'solution.py').write_text(code, encoding='utf-8')
@@ -145,7 +147,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/file':
                 folder = ROOT / 'workspace'
                 folder.mkdir(exist_ok=True)
-                target = folder / (lesson_id + '.py')
+                suffix = '.md' if LESSON_MAP[lesson_id].get('kind') == 'lab' else '.py'
+                target = folder / (lesson_id + suffix)
                 if payload.get('read'):
                     if not target.exists():
                         raise ValueError('Сначала сохрани файл для редактора.')
