@@ -140,6 +140,26 @@ class ApiTests(unittest.TestCase):
             self.request('/api/save', {'lesson':'02-types','code':'x'}, token=False)
         self.assertEqual(caught.exception.code, 403)
 
+    def test_manual_lab_completion_requires_report_and_can_be_undone(self):
+        for code in ('', app.LESSON_MAP['15-lab']['starter']):
+            with self.assertRaises(HTTPError) as caught:
+                self.request('/api/lab-complete', {'lesson':'15-lab', 'code':code, 'completed':True})
+            self.assertEqual(caught.exception.code, 400)
+        payload = {'lesson':'15-lab', 'code':'Команда pytest: 1 passed. Критерии проверены.', 'completed':True}
+        result = self.request('/api/lab-complete', payload)
+        self.assertEqual(result['progress']['15-lab']['passed'], 1)
+        self.assertEqual(result['progress']['15-lab']['attempts'], 0)
+        payload['completed'] = False
+        self.assertEqual(self.request('/api/lab-complete', payload)['progress']['15-lab']['passed'], 0)
+        payload['lesson'] = '01-first-check'
+        with self.assertRaises(HTTPError):
+            self.request('/api/lab-complete', payload)
+
+    def test_shutdown_requires_token(self):
+        with self.assertRaises(HTTPError) as caught:
+            self.request('/api/shutdown', {}, token=False)
+        self.assertEqual(caught.exception.code, 403)
+
     def test_shop_and_unknown_path(self):
         self.assertEqual(len(self.request('/shop/api/products')['products']), 2)
         with self.assertRaises(HTTPError) as caught:
