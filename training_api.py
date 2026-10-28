@@ -1,6 +1,7 @@
 """Local, in-memory exercise service. Fake identities, never production auth."""
 import argparse
 import json
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 from urllib.parse import urlparse
@@ -84,9 +85,13 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8767)
+    parser.add_argument('--open-browser', action='store_true')
     args = parser.parse_args()
     server = TrainingServer(('127.0.0.1', args.port))
     print(f'Training API: http://127.0.0.1:{server.server_port}', flush=True)
+    print('Keep this window open. Stop: Ctrl+C. Health: /health', flush=True)
+    if args.open_browser:
+        webbrowser.open(f'http://127.0.0.1:{server.server_port}/health')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
