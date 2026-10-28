@@ -52,6 +52,8 @@ def save(lesson, code, hints=0, result=None):
 def evaluate(lesson_id, code):
     """Run learner-owned local Python in a separate process; this is NOT a sandbox."""
     lesson = LESSON_MAP[lesson_id]
+    if lesson.get('kind') == 'lab':
+        raise ValueError('Эта работа выполняется в IDE и принимается по отчёту. Автопроверки нет.')
     with tempfile.TemporaryDirectory(prefix='qa-path-') as temp:
         folder = Path(temp)
         (folder / 'solution.py').write_text(code, encoding='utf-8')
@@ -114,6 +116,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError('Ожидался объект JSON.')
             path = urlparse(self.path).path
+            if path == '/api/shutdown':
+                self.respond({'stopping': True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if path == '/api/import':
                 if payload.get('version') != 1 or not isinstance(payload.get('progress'), dict):
                     raise ValueError('Неподдерживаемая резервная копия.')
@@ -142,10 +148,22 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/save':
                 save(lesson_id, code, hints)
                 return self.respond({'saved': True})
+            if path == '/api/lab-complete':
+                lesson = LESSON_MAP[lesson_id]
+                completed = payload.get('completed')
+                if lesson.get('kind') != 'lab' or type(completed) is not bool:
+                    raise ValueError('Ожидалась отметка лабораторной.')
+                if completed and (not code.strip() or code.strip() == lesson['starter'].strip()):
+                    raise ValueError('Сначала заполни отчёт по выполненной работе.')
+                save(lesson_id, code, hints)
+                with connect() as db:
+                    db.execute('UPDATE progress SET passed=? WHERE lesson=?', (int(completed), lesson_id))
+                return self.respond({'progress': state()})
             if path == '/api/file':
                 folder = ROOT / 'workspace'
                 folder.mkdir(exist_ok=True)
-                target = folder / (lesson_id + '.py')
+                suffix = '.md' if LESSON_MAP[lesson_id].get('kind') == 'lab' else '.py'
+                target = folder / (lesson_id + suffix)
                 if payload.get('read'):
                     if not target.exists():
                         raise ValueError('Сначала сохрани файл для редактора.')

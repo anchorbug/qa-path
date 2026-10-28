@@ -30,7 +30,7 @@ SOLUTIONS = {
 
 class CourseTests(unittest.TestCase):
     def test_reference_solutions_pass(self):
-        self.assertEqual(set(SOLUTIONS), set(app.LESSON_MAP))
+        self.assertEqual(set(SOLUTIONS), {l['id'] for l in LESSONS if l.get('kind') != 'lab'})
         for lesson_id, code in SOLUTIONS.items():
             with self.subTest(lesson=lesson_id):
                 result = app.evaluate(lesson_id, code)
@@ -38,6 +38,8 @@ class CourseTests(unittest.TestCase):
 
     def test_unfinished_starters_fail(self):
         for lesson in LESSONS:
+            if lesson.get('kind') == 'lab':
+                continue
             with self.subTest(lesson=lesson['id']):
                 self.assertFalse(app.evaluate(lesson['id'], lesson['starter'])['passed'])
 
@@ -89,7 +91,7 @@ class ApiTests(unittest.TestCase):
 
     def test_course_hides_checks(self):
         data = self.request('/api/course')
-        self.assertEqual(len(data['lessons']), 14)
+        self.assertEqual(len(data['lessons']), len(LESSONS))
         self.assertNotIn('checks', data['lessons'][0])
         self.assertEqual(data['progress'], {})
 
@@ -121,9 +123,41 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 400)
         self.assertEqual(self.request('/api/course')['progress']['03-boundaries']['code'], 'original')
 
+    def test_lab_report_is_saved_but_not_auto_passed(self):
+        self.request('/api/save', {'lesson':'15-lab', 'code':'Команда: pytest; результат: 1 passed.'})
+        before = self.request('/api/course')['progress']['15-lab']
+        self.assertEqual(before['passed'], 0)
+        with self.assertRaises(HTTPError) as caught:
+            self.request('/api/check', {'lesson':'15-lab', 'code':'print(1)'})
+        self.assertEqual(caught.exception.code, 400)
+        backup = self.request('/api/export')
+        restored = self.request('/api/import', backup)['progress']['15-lab']
+        self.assertEqual(restored['code'], before['code'])
+        self.assertEqual(restored['passed'], 0)
+
     def test_token_is_required(self):
         with self.assertRaises(HTTPError) as caught:
             self.request('/api/save', {'lesson':'02-types','code':'x'}, token=False)
+        self.assertEqual(caught.exception.code, 403)
+
+    def test_manual_lab_completion_requires_report_and_can_be_undone(self):
+        for code in ('', app.LESSON_MAP['15-lab']['starter']):
+            with self.assertRaises(HTTPError) as caught:
+                self.request('/api/lab-complete', {'lesson':'15-lab', 'code':code, 'completed':True})
+            self.assertEqual(caught.exception.code, 400)
+        payload = {'lesson':'15-lab', 'code':'Команда pytest: 1 passed. Критерии проверены.', 'completed':True}
+        result = self.request('/api/lab-complete', payload)
+        self.assertEqual(result['progress']['15-lab']['passed'], 1)
+        self.assertEqual(result['progress']['15-lab']['attempts'], 0)
+        payload['completed'] = False
+        self.assertEqual(self.request('/api/lab-complete', payload)['progress']['15-lab']['passed'], 0)
+        payload['lesson'] = '01-first-check'
+        with self.assertRaises(HTTPError):
+            self.request('/api/lab-complete', payload)
+
+    def test_shutdown_requires_token(self):
+        with self.assertRaises(HTTPError) as caught:
+            self.request('/api/shutdown', {}, token=False)
         self.assertEqual(caught.exception.code, 403)
 
     def test_shop_and_unknown_path(self):
